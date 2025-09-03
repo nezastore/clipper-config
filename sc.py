@@ -9,7 +9,7 @@ import traceback
 import threading
 import queue
 import textwrap
-from tkinter import Tk, filedialog, Button, Label, Text, Scrollbar, Frame, messagebox, StringVar, OptionMenu, Entry, Checkbutton, BooleanVar, Scale, IntVar, LabelFrame
+from tkinter import Tk, filedialog, Button, Label, Text, Scrollbar, Frame, messagebox, StringVar, OptionMenu, Entry, Checkbutton, BooleanVar, Scale, IntVar, LabelFrame, Radiobutton
 from tkinter.ttk import Progressbar
 
 # Third-party libraries (pastikan sudah di-install)
@@ -35,8 +35,12 @@ CUSTOM_FONT_FILE = 'ContrailOne-Regular.ttf'
 def sanitize_filename(filename):
     emoji_pattern = re.compile(
         "["
-        "\U0001F600-\U0001F64F" "\U0001F300-\U0001F5FF" "\U0001F680-\U0001F6FF"
-        "\U0001F1E0-\U0001F1FF" "\U00002702-\U000027B0" "\U000024C2-\U0001F251"
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map symbols
+        "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+        "\U00002702-\U000027B0"
+        "\U000024C2-\U0001F251"
         "]+", flags=re.UNICODE)
     filename = emoji_pattern.sub(r"", filename)
     filename = filename.replace("#", "")
@@ -95,23 +99,64 @@ def transcribe_audio(audio_path, whisper_model, model_name, logger_func=print):
     except Exception as e:
         logger_func(f"❌ ERROR saat transkripsi: {e}"); return None
 
+# ==============================================================================
+# === FUNGSI INTI AI DENGAN PROMPT BARU YANG LEBIH CERDAS ===
+# ==============================================================================
 def get_clips_from_gemini(transcript_text, gemini_model_name, logger_func=print):
+    # --- PROMPT BARU DENGAN FOKUS PADA "HOOK" ---
     prompt = f"""
-    Anda adalah API pemroses teks otomatis. Tugas Anda menganalisis teks di dalam tag `<transcript>` dan mengubahnya menjadi format JSON yang valid.
-    ATURAN: Output HARUS berupa JSON valid, dimulai dengan `[` dan diakhiri `]`. Jangan menulis teks lain.
-    <transcript>{transcript_text}</transcript>
-    INSTRUKSI: Identifikasi 5-7 klip viral (30-60 detik). Untuk setiap klip, buat objek JSON dengan kunci: "start_time" & "end_time" (HH:MM:SS), "title" (judul clickbait maks 70 karakter dengan 1-2 emoji), "hashtags" (list 3 string tagar), "editing_style" (pilih satu: "dynamic", "emotional", atau "informative").
+    Anda adalah seorang editor video profesional dan ahli strategi konten viral yang terobsesi dengan "hook" (kail pancing) di 3 detik pertama. Tugas Anda adalah menganalisis transkrip video di dalam tag `<transcript>` dan mengidentifikasi momen-momen emas yang paling berpotensi FYP.
+
+    ATURAN UTAMA:
+    1.  **HOOK ADALAH SEGALANYA:** Setiap klip yang Anda sarankan HARUS dimulai dengan hook yang sangat kuat dan langsung menarik perhatian dalam 3 detik pertamanya. Jika sebuah segmen tidak memiliki hook yang jelas di awalnya, JANGAN JADIKAN KLIP.
+    2.  **KUALITAS, BUKAN KUANTITAS:** Fokus hanya pada momen yang benar-benar berpotensi viral. Lebih baik menyarankan 2 klip dengan hook sempurna daripada 7 klip yang biasa saja.
+    3.  **DURASI IDEAL:** Setelah hook, klip harus berlanjut selama 30 hingga 60 detik untuk menceritakan sebuah poin atau cerita singkat.
+    4.  **OUTPUT JSON:** Output HARUS berupa format JSON yang valid, dimulai dengan `[` dan diakhiri `]`. Jangan menulis teks atau penjelasan lain di luar JSON.
+
+    <transcript>
+    {transcript_text}
+    </transcript>
+
+    INSTRUKSI UNTUK SETIAP KLIP:
+    Untuk setiap momen emas yang Anda identifikasi, ikuti proses berpikir ini:
+    1.  **Cari Hook-nya Dulu:** Identifikasi momen spesifik yang merupakan "kail pancing" terbaik. Hook bisa berupa:
+        - Pertanyaan yang memancing rasa ingin tahu ("Bagaimana jika saya bilang...?").
+        - Pernyataan kontroversial, mengejutkan, atau berani ("Ini adalah kesalahan terbesar...").
+        - Momen emosional yang tiba-tiba (teriakan, tawa terbahak-bahak, ekspresi kaget).
+        - Awal dari sebuah klimaks atau punchline cerita.
+    2.  **Buat Klip di Sekitar Hook:**
+        - "start_time": Atur waktu mulai **TEPAT PADA DETIK HOOK DIMULAI**. Ini adalah bagian terpenting.
+        - "end_time": Atur waktu selesai 30-60 detik setelah start_time, pastikan keseluruhan klip tetap relevan dengan hook-nya.
+    3.  **Lengkapi Metadata Viral:**
+        - "title": Buat judul clickbait (maks 70 karakter) yang berhubungan dengan hook. Gunakan 1-2 emoji.
+        - "hashtags": Berikan 3 tagar relevan untuk FYP.
+        - "editing_style": Pilih gaya editing ("dynamic", "emotional", atau "informative") yang paling bisa menonjolkan hook tersebut.
     """
     try:
         model = genai.GenerativeModel(gemini_model_name)
         response = model.generate_content(prompt)
+        # Regex ini lebih toleran untuk membersihkan teks sebelum & sesudah JSON
         json_match = re.search(r'\[.*\]', response.text, re.DOTALL)
-        if not json_match: logger_func("❌ ERROR: Format JSON tidak ditemukan."); return []
-        return json.loads(json_match.group(0))
+        if not json_match:
+            logger_func("❌ ERROR: AI tidak memberikan output JSON yang valid.")
+            logger_func(f"   Jawaban AI: {response.text}")
+            return []
+        
+        clips = json.loads(json_match.group(0))
+        logger_func(f"✅ AI merekomendasikan {len(clips)} klip dengan hook yang kuat.")
+        return clips
     except Exception as e:
-        logger_func(f"❌ ERROR saat analisis AI: {e}"); return []
+        logger_func(f"❌ ERROR saat analisis AI: {e}")
+        try:
+            logger_func(f"   Respons mentah dari AI: {response.text}")
+        except NameError:
+            pass
+        return []
+# ==============================================================================
+# === AKHIR DARI FUNGSI YANG DIPERBARUI ===
+# ==============================================================================
 
-def process_clip(source_video, start_time, end_time, watermark_file, source_text, output_filename, style, music_file, music_volume, word_segments, effects, logger_func=print):
+def process_clip(source_video, start_time, end_time, watermark_file, source_text, output_filename, style, music_file, music_volume, word_segments, effects, remove_original_audio, original_audio_volume, logger_func=print):
     try:
         main_video = ffmpeg.input(source_video, ss=start_time, to=end_time)
         watermark = ffmpeg.input(watermark_file)
@@ -147,16 +192,30 @@ def process_clip(source_video, start_time, end_time, watermark_file, source_text
             processed_video = processed_video.drawtext(text=phrase['text'].upper(), x='(w-text_w)/2', y='h*0.70', fontsize='42', fontcolor='white', fontfile=CUSTOM_FONT_FILE, borderw=3, bordercolor='black@0.8', enable=f'between(t,{start_sub},{end_sub})')
         processed_video = ffmpeg.overlay(processed_video, watermark, x='main_w-overlay_w-10', y='10')
         processed_video = processed_video.drawtext(text=source_text, x='(w-text_w)/2', y='h-th-20', fontsize=20, fontcolor='white', box=1, boxcolor='black@0.5', boxborderw=5)
-        original_audio = main_video.audio
+
+        audio_inputs = []
+        if not remove_original_audio:
+            original_audio = main_video.audio.filter('volume', original_audio_volume / 100.0)
+            audio_inputs.append(original_audio)
+        
         if music_file:
-            music_audio = ffmpeg.input(music_file).audio
-            volume_level = music_volume / 100.0
-            mixed_audio = ffmpeg.filter([original_audio.filter('volume', 1.0), music_audio.filter('volume', volume_level)], 'amix', duration='first')
-        else: mixed_audio = original_audio
-        final_output = ffmpeg.output(processed_video, mixed_audio, output_filename, vcodec='libx264', acodec='aac', preset='fast', crf=23)
+            music_audio = ffmpeg.input(music_file).audio.filter('volume', music_volume / 100.0)
+            audio_inputs.append(music_audio)
+            
+        final_audio = None
+        if len(audio_inputs) > 1:
+            final_audio = ffmpeg.filter(audio_inputs, 'amix', duration='first')
+        elif len(audio_inputs) == 1:
+            final_audio = audio_inputs[0]
+
+        if final_audio is not None:
+            final_output = ffmpeg.output(processed_video, final_audio, output_filename, vcodec='libx264', acodec='aac', preset='fast', crf=23)
+        else:
+            final_output = ffmpeg.output(processed_video, output_filename, vcodec='libx264', acodec='aac', preset='fast', crf=23)
+
         final_output.run(overwrite_output=True, quiet=True)
     except Exception as e:
-        logger_func(f"❌ ERROR saat memproses klip: {e}")
+        logger_func(f"❌ ERROR saat memproses klip: {e}\n{traceback.format_exc()}")
 
 # ==============================================================================
 # KELAS UTAMA APLIKASI GUI
@@ -175,14 +234,23 @@ class VideoClipperApp:
         self.log_queue, self.license_queue = queue.Queue(), queue.Queue()
         self.whisper_model_selection = StringVar(value="base")
         self.effects_vars = { 'mirror': BooleanVar(), 'grayscale': BooleanVar(), 'sepia': BooleanVar(), 'negate': BooleanVar(), 'color_boost': BooleanVar() }
-        self.music_volume_var = IntVar(value=20)
-        self.volume_display_var = StringVar(value="20%")
+        
+        self.music_volume_var = IntVar(value=15)
+        self.volume_display_var = StringVar(value="15%")
+        self.remove_original_audio_var = BooleanVar(value=False)
+        self.original_audio_volume_var = IntVar(value=100)
+        self.original_volume_display_var = StringVar(value="100%")
+
+        self.cut_mode = StringVar(value="otomatis")
+        self.manual_start_time = StringVar(value="00:00:00")
+        self.manual_end_time = StringVar(value="00:01:00")
 
         self.setup_ui()
         self.root.after(100, self.process_log_queue)
         self.root.after(200, self.process_license_queue)
         self.root.after(500, self._initial_license_check)
 
+    # --- FUNGSI UI DENGAN TATA LETAK BARU ---
     def setup_ui(self):
         main_frame = Frame(self.root, padx=10, pady=10)
         main_frame.pack(fill="both", expand=True)
@@ -197,6 +265,9 @@ class VideoClipperApp:
         right_column = Frame(middle_frame)
         right_column.pack(side="left", fill="both", expand=True)
         
+        # =======================================================
+        # === KOLOM KIRI (SETTINGS)
+        # =======================================================
         license_lf = LabelFrame(left_column, text="Manajemen Lisensi", font=("Helvetica", 10, "bold"), padx=10, pady=10)
         license_lf.pack(fill="x", pady=(0,10))
         id_entry = Entry(license_lf, textvariable=self.device_id_var, state="readonly", width=30)
@@ -213,17 +284,40 @@ class VideoClipperApp:
         Label(settings_lf, textvariable=self.output_folder, fg="blue").pack(anchor="w")
         Button(settings_lf, text="Pilih Watermark", command=self.select_watermark).pack(fill="x", pady=(8,2), anchor="w")
         Label(settings_lf, textvariable=self.watermark_file, fg="blue").pack(anchor="w")
+        Checkbutton(settings_lf, text="Hapus Suara Asli Video", variable=self.remove_original_audio_var).pack(anchor="w", pady=(8,0))
+        original_volume_frame = Frame(settings_lf); original_volume_frame.pack(fill="x", pady=2)
+        Label(original_volume_frame, text="Volume Suara Asli:").pack(side="left")
+        Scale(original_volume_frame, from_=0, to=100, orient="horizontal", variable=self.original_audio_volume_var, command=self.update_original_volume_label).pack(side="left", expand=True, fill="x", padx=5)
+        Label(original_volume_frame, textvariable=self.original_volume_display_var, width=4).pack(side="left")
         Button(settings_lf, text="Pilih Musik Latar", command=self.select_music).pack(fill="x", pady=(8,2), anchor="w")
         Label(settings_lf, textvariable=self.music_file, fg="blue").pack(anchor="w")
-        volume_frame = Frame(settings_lf); volume_frame.pack(fill="x", pady=5)
-        Label(volume_frame, text="Volume:").pack(side="left")
-        Scale(volume_frame, from_=0, to=100, orient="horizontal", variable=self.music_volume_var, command=self.update_volume_label).pack(side="left", expand=True, fill="x", padx=5)
-        Label(volume_frame, textvariable=self.volume_display_var, width=4).pack(side="left")
+        music_volume_frame = Frame(settings_lf); music_volume_frame.pack(fill="x", pady=2)
+        Label(music_volume_frame, text="Volume Musik Latar:").pack(side="left")
+        Scale(music_volume_frame, from_=0, to=100, orient="horizontal", variable=self.music_volume_var, command=self.update_music_volume_label).pack(side="left", expand=True, fill="x", padx=5)
+        Label(music_volume_frame, textvariable=self.volume_display_var, width=4).pack(side="left")
         model_frame = Frame(settings_lf); model_frame.pack(fill='x', pady=5, anchor="w")
         Label(model_frame, text="Akurasi:").pack(side="left", padx=(0,10))
         OptionMenu(model_frame, self.whisper_model_selection, *["base", "small", "medium"]).pack(side="left")
-
-        effects_lf = LabelFrame(left_column, text="Efek Video (Opsional)", font=("Helvetica", 10, "bold"), padx=10, pady=10)
+        
+        cut_mode_lf = LabelFrame(left_column, text="Mode Pemotongan Video", font=("Helvetica", 10, "bold"), padx=10, pady=10)
+        cut_mode_lf.pack(fill="x", pady=(0, 10))
+        Radiobutton(cut_mode_lf, text="Otomatis (AI)", variable=self.cut_mode, value="otomatis", command=self.toggle_manual_cut_fields).pack(anchor="w")
+        Radiobutton(cut_mode_lf, text="Manual (Custom Cut)", variable=self.cut_mode, value="manual", command=self.toggle_manual_cut_fields).pack(anchor="w")
+        self.manual_fields_frame = Frame(cut_mode_lf, padx=15)
+        self.manual_fields_frame.pack(fill="x")
+        Label(self.manual_fields_frame, text="Waktu Mulai (HH:MM:SS):").pack(anchor="w", pady=(5,0))
+        self.start_entry = Entry(self.manual_fields_frame, textvariable=self.manual_start_time)
+        self.start_entry.pack(fill="x")
+        Label(self.manual_fields_frame, text="Waktu Selesai (HH:MM:SS):").pack(anchor="w", pady=(5,0))
+        self.end_entry = Entry(self.manual_fields_frame, textvariable=self.manual_end_time)
+        self.end_entry.pack(fill="x")
+        
+        # =======================================================
+        # === KOLOM KANAN (PROSES)
+        # =======================================================
+        
+        # --- EFEK VIDEO DIPINDAHKAN KE SINI ---
+        effects_lf = LabelFrame(right_column, text="Efek Video (Opsional)", font=("Helvetica", 10, "bold"), padx=10, pady=10)
         effects_lf.pack(fill="x", pady=(0,10))
         Checkbutton(effects_lf, text="Mirror (Cermin Horizontal)", variable=self.effects_vars['mirror']).pack(anchor="w")
         Checkbutton(effects_lf, text="Grayscale (Hitam Putih)", variable=self.effects_vars['grayscale']).pack(anchor="w")
@@ -247,8 +341,20 @@ class VideoClipperApp:
         self.log_text.config(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
         self.log_text.pack(side="left", fill="both", expand=True)
+        
+        self.toggle_manual_cut_fields() 
 
-    def update_volume_label(self, value): self.volume_display_var.set(f"{int(float(value))}%")
+    def toggle_manual_cut_fields(self):
+        if self.cut_mode.get() == "manual":
+            self.start_entry.config(state="normal")
+            self.end_entry.config(state="normal")
+        else:
+            self.start_entry.config(state="disabled")
+            self.end_entry.config(state="disabled")
+    
+    def update_music_volume_label(self, value): self.volume_display_var.set(f"{int(float(value))}%")
+    def update_original_volume_label(self, value): self.original_volume_display_var.set(f"{int(float(value))}%")
+    
     def get_and_copy_uuid(self):
         try:
             device_id = machineid.id()
@@ -270,7 +376,6 @@ class VideoClipperApp:
         folder = filedialog.askdirectory(title="Pilih Folder Output")
         if folder: self.output_folder.set(f"Folder Output: {folder}")
     
-    # --- PERBAIKAN BUG DISINI ---
     def select_watermark(self):
         file = filedialog.askopenfilename(title="Pilih File Watermark", filetypes=[("Image Files", "*.png;*.jpg;*.jpeg")])
         if file:
@@ -282,7 +387,6 @@ class VideoClipperApp:
         if file:
             self.music_full_path = file
             self.music_file.set(f"Musik: {os.path.basename(file)}")
-    # --- AKHIR PERBAIKAN ---
 
     def log(self, message): self.log_queue.put(message)
     def process_log_queue(self):
@@ -328,13 +432,34 @@ class VideoClipperApp:
                 self.update_progress(4, total_steps, f"Transkripsi Audio ({index+1}/{len(video_urls)})...")
                 transcription_result = transcribe_audio(video_path, whisper_model, selected_whisper_model, self.log)
                 if not transcription_result: continue
-                self.update_progress(5, total_steps, f"Mencari Momen Penting dengan AI ({index+1}/{len(video_urls)})...")
-                ai_clips = get_clips_from_gemini(transcription_result['text'], GEMINI_MODEL, self.log)
-                if not ai_clips: self.log("   🔴 AI tidak memberikan rekomendasi klip."); continue
+                
+                ai_clips = []
+                current_cut_mode = self.cut_mode.get()
+                
+                if current_cut_mode == "otomatis":
+                    self.update_progress(5, total_steps, f"Mencari Momen Penting dengan AI ({index+1}/{len(video_urls)})...")
+                    ai_clips = get_clips_from_gemini(transcription_result['text'], GEMINI_MODEL, self.log)
+                else: 
+                    self.update_progress(5, total_steps, f"Menggunakan Waktu Manual ({index+1}/{len(video_urls)})...")
+                    start_t = self.manual_start_time.get()
+                    end_t = self.manual_end_time.get()
+                    time_pattern = re.compile(r'^\d{2}:\d{2}:\d{2}$')
+                    if not time_pattern.match(start_t) or not time_pattern.match(end_t):
+                        self.log(f"   ❌ ERROR: Format waktu manual tidak valid (Harus HH:MM:SS). Melewati video ini.")
+                        continue
+                    
+                    self.log(f"   ✂️ Mode potong manual: Dari {start_t} sampai {end_t}")
+                    ai_clips = [{"start_time": start_t, "end_time": end_t, "title": f"Klip Manual {start_t} - {end_t}", "hashtags": ["#customclip", "#manualcut"], "editing_style": "informative"}]
+
+                if not ai_clips: self.log("   🔴 Tidak ada klip untuk diproses (baik dari AI maupun manual)."); continue
                 self.update_progress(6, total_steps, f"Membuat Klip Video ({index+1}/{len(video_urls)})...")
                 self.log(f"   Ditemukan {len(ai_clips)} potensi klip. Memulai rendering...")
                 selected_effects = {key: var.get() for key, var in self.effects_vars.items()}
+                
                 music_volume_value = self.music_volume_var.get()
+                original_volume_value = self.original_audio_volume_var.get()
+                remove_original_value = self.remove_original_audio_var.get()
+
                 for i, clip in enumerate(ai_clips):
                     try:
                         self.log(f"   - Merender klip {i+1} dari {len(ai_clips)}...")
@@ -345,12 +470,16 @@ class VideoClipperApp:
                         if not clip_words: continue
                         safe_filename = sanitize_filename(f"{clip.get('title', f'Klip {i+1}')} {' '.join(clip.get('hashtags', []))}")
                         output_file = os.path.join(output_folder, f"{safe_filename}.mp4")
+                        
                         process_clip(
                             source_video=video_path, start_time=start_time_str, end_time=end_time_str,
                             watermark_file=self.watermark_full_path, source_text=f"Sumber: {channel_name}",
                             output_filename=output_file, style=clip.get('editing_style', 'informative'),
                             music_file=self.music_full_path, music_volume=music_volume_value,
-                            word_segments=clip_words, effects=selected_effects, logger_func=self.log
+                            word_segments=clip_words, effects=selected_effects, 
+                            remove_original_audio=remove_original_value,
+                            original_audio_volume=original_volume_value,
+                            logger_func=self.log
                         )
                     except KeyError as e:
                         self.log(f"   ❌ ERROR: Kunci {e} tidak ada pada data klip AI.")
