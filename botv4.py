@@ -10,6 +10,7 @@ import threading
 import queue
 import time
 import math
+from contextlib import redirect_stdout, redirect_stderr # --- SOLUSI: Impor library yang dibutuhkan ---
 from tkinter import Tk, filedialog, Button, Label, Text, Scrollbar, Frame, messagebox, StringVar, OptionMenu, Entry, Checkbutton, BooleanVar, Scale, IntVar, LabelFrame, Radiobutton, Canvas
 from tkinter.ttk import Progressbar
 
@@ -32,7 +33,7 @@ COOKIE_FILE = 'cookies.txt'
 TEMP_THUMBNAIL_FILE = "_temp_thumbnail.jpg"
 
 # ==============================================================================
-# FUNGSI-FUNGSI UTILITY & BACKEND
+# FUNGSI-FUNGSI UTILITY & BACKEND (Tidak ada perubahan di bagian ini)
 # ==============================================================================
 def sanitize_filename(filename):
     emoji_pattern = re.compile(
@@ -609,7 +610,12 @@ class VideoClipperApp:
             if transcription_is_needed:
                 self.update_progress(3, 10, "Memuat Model Transkripsi...")
                 selected_whisper_model = self.whisper_model_selection.get()
-                self.log(f"   Memuat model AI Whisper ({selected_whisper_model})..."); whisper_model = whisper.load_model(selected_whisper_model); self.log("   Model Whisper berhasil dimuat.")
+                self.log(f"   Memuat model AI Whisper ({selected_whisper_model})... Ini mungkin butuh waktu saat pertama kali.")
+                # --- SOLUSI ERROR TQDM/WHISPER ---
+                with open(os.devnull, 'w') as devnull:
+                    with redirect_stdout(devnull), redirect_stderr(devnull):
+                        whisper_model = whisper.load_model(selected_whisper_model)
+                self.log("   Model Whisper berhasil dimuat.")
             
             selected_font_name = self.subtitle_font_selection.get()
             font_filename_to_use = self.font_map.get(selected_font_name)
