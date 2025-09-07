@@ -355,7 +355,7 @@ def process_clip(source_video, start_time, end_time, watermark_file, watermark_p
             logger_func("   ✍️ Menambahkan subtitle ke video klip...")
             processed_video = apply_subtitle_filter(processed_video, subtitle_file, font_filename)
 
-        if not is_short_mode and source_text:
+        if source_text: # --- MODIFIKASI: Dihapus 'not is_short_mode' ---
             processed_video = processed_video.drawtext(text=source_text, x='(w-text_w)/2', y='h-th-20', fontsize=20, fontcolor='white', box=1, boxcolor='black@0.5', boxborderw=5)
         
         if watermark_file:
@@ -524,7 +524,6 @@ class VideoClipperApp:
         }
         self.subtitle_font_selection = StringVar(value="Montserrat Bold")
 
-        # --- PENAMBAHAN BARU: Variabel untuk teks sumber di mode Long-to-Short ---
         self.long_to_short_add_source = BooleanVar(value=False)
         
         self.setup_ui()
@@ -604,7 +603,6 @@ class VideoClipperApp:
         Label(count_frame, text="Jumlah Shorts:").pack(side="left"); Entry(count_frame, textvariable=self.scrape_count, width=5).pack(side="left", padx=5)
         self.scrape_button = Button(count_frame, text="🔎 Cari & Tempel Link", command=self.start_scraping_thread); self.scrape_button.pack(side="left", expand=True, fill="x")
         
-        # --- PERUBAHAN UI: Memindahkan mode Long-to-Short ke kiri & menambahkan checkbox sumber ---
         cut_mode_lf = LabelFrame(scrollable_frame, text="Mode Pemotongan Video (Long-to-Short)", font=("Helvetica", 10, "bold"), padx=10, pady=10)
         cut_mode_lf.pack(fill="x", pady=(0,10), padx=10)
         Radiobutton(cut_mode_lf, text="Otomatis (AI)", variable=self.cut_mode, value="otomatis", command=self.toggle_manual_cut_fields).pack(anchor="w")
@@ -876,8 +874,19 @@ class VideoClipperApp:
                         if subtitle_path and os.path.exists(subtitle_path): os.remove(subtitle_path)
 
                 elif is_shorts_mode:
-                    # Logika untuk shorts mode... (disembunyikan untuk keringkasan, tidak ada perubahan)
-                    pass
+                    subtitle_path = None
+                    if self.burn_subtitles.get() and transcription_result:
+                        subtitle_path = os.path.join(output_folder_base, f"temp_sub_{int(time.time())}.srt")
+                        generate_srt_file(transcription_result, subtitle_path, self.log)
+                    final_title = info.get('title', f'Short_{index+1}')
+                    if self.use_ai_for_shorts_title.get():
+                        self.log("   🤖 Meminta AI untuk membuat judul baru..."); new_title = get_paraphrased_title_from_gemini(final_title, GEMINI_MODEL, self.log)
+                        if new_title: final_title = new_title
+                    output_file = os.path.join(output_folder, f"{sanitize_filename(final_title)}.mp4")
+                    self.update_progress(7, 10, f"Memproses Ulang Short ({index+1}/{len(video_urls)})...")
+                    process_clip(source_video=video_path, start_time="00:00:00", end_time=time.strftime('%H:%M:%S', time.gmtime(info.get('duration', 60))), watermark_file=self.watermark_full_path, watermark_position=self.watermark_position.get(), source_text="", output_filename=output_file, style='informative', music_file=self.music_full_path, music_volume=self.music_volume_var.get(), effects={k:v.get() for k,v in self.effects_vars.items()}, remove_original_audio=self.remove_original_audio_var.get(), original_audio_volume=self.original_audio_volume_var.get(), is_short_mode=True, subtitle_file=subtitle_path, font_filename=font_filename_to_use, logger_func=self.log)
+                    if subtitle_path and os.path.exists(subtitle_path): os.remove(subtitle_path)
+                    if self.use_custom_thumbnail.get() and self.thumbnail_full_path: embed_thumbnail(output_file, self.thumbnail_full_path, self.log)
 
                 elif is_long_to_short_mode:
                     subtitle_path = None
