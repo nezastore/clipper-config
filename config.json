@@ -1,5 +1,6 @@
 {
-  "api_key": "AIzaSyC4ypgC_PYkjLKckoej_IboenJz4iKHuEA",
+  "api_key": "sk-2550d55fafab4edc94e333f4ae65a605",
+  "deepseek_model": "deepseek-chat",
   "whisper_model": "base",
-  "gemini_model": "gemini-1.5-flash"
+  "license_allow_all": false
 }
